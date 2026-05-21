@@ -1,15 +1,33 @@
-# file-agent v0.2.0
+# file-agent v0.3.0
 
 Share local files via MCP (Model Context Protocol) over a chisel reverse tunnel.
 
 ## Quick Start
 
-1. Get your connection command from the TeamWorker UI (Agent List → 本地连接)
+1. Get a connection code from the TeamWorker UI (Agent List → 本地连接)
 2. Download the binary for your platform from `dist/`
-3. Run the command:
+3. Run with connection code:
 
 ```bash
-./file-agent --server 47.239.24.30:7000 --auth <token> --user <user_id> --tunnel-port 9100 --mcp-token <mcp_token> ./my-project
+./file-agent F3K9-X2M7
+./file-agent F3K9-X2M7 /path/to/project
+```
+
+Or double-click the binary and enter the code interactively:
+
+```
+$ ./file-agent-darwin-arm64
+
+📁 TeamWorker 文件共享客户端 v0.3.0
+
+请输入连接码: F3K9-X2M7
+请输入共享目录 [当前目录 .]: /Users/zhangsan/project
+
+✓ 已获取连接配置
+✓ 正在连接 47.239.24.30:7000...
+✓ 隧道已建立！Agent 现在可以访问您的文件。
+  共享目录: /Users/zhangsan/project
+  按 Ctrl+C 断开连接
 ```
 
 ## Architecture
@@ -41,18 +59,27 @@ Your Computer                           Server (Docker Network)
 
 ```
 Usage:
+  file-agent [connection-code] [shared-directory]
   file-agent [options] <shared-directory>
 
+Quick Connect:
+  file-agent F3K9-X2M7                        # Connect with code, share current directory
+  file-agent F3K9-X2M7 /path/to/project       # Connect with code and directory
+
+Interactive:
+  file-agent                                   # Double-click or run with no args
+
 Options:
-  --server string        Chisel server address (or TEAMWORKER_SERVER)
-  --auth string          Chisel auth token (or TEAMWORKER_AUTH)
-  --user string          User ID (or TEAMWORKER_USER)
-  --tunnel-port int      Remote port assigned by server (or TEAMWORKER_TUNNEL_PORT)
-  --local-port int       Local port for MCP server (default 18080)
-  --mcp-token string     MCP Bearer token (or TEAMWORKER_MCP_TOKEN)
-  --keepalive duration   Keep-alive interval (default 25s)
-  -v                     Verbose logging
-  --version              Print version
+  --server-url string   TeamWorker server URL (or TEAMWORKER_SERVER_URL)
+  --server string       Chisel server address (or TEAMWORKER_SERVER)
+  --auth string         Chisel auth token (or TEAMWORKER_AUTH)
+  --user string         User ID (or TEAMWORKER_USER)
+  --tunnel-port int     Remote port assigned by server (or TEAMWORKER_TUNNEL_PORT)
+  --local-port int      Local port for MCP server (default 18080)
+  --mcp-token string    MCP Bearer token (or TEAMWORKER_MCP_TOKEN)
+  --keepalive duration  Keep-alive interval (default 25s)
+  -v                    Verbose logging
+  --version             Print version
 ```
 
 ## Build from Source
@@ -61,13 +88,14 @@ Options:
 go build -o file-agent ./cmd/file-agent
 ```
 
-Cross-compile:
+Cross-compile with embedded server URL:
 ```bash
+SERVER_URL="https://47.239.24.30:8082"
 mkdir -p dist
-GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/file-agent-darwin-arm64 ./cmd/file-agent
-GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/file-agent-darwin-amd64 ./cmd/file-agent
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/file-agent-linux-amd64 ./cmd/file-agent
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/file-agent-windows-amd64.exe ./cmd/file-agent
+GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X main.defaultServerURL=${SERVER_URL}" -o dist/file-agent-darwin-arm64 ./cmd/file-agent
+GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X main.defaultServerURL=${SERVER_URL}" -o dist/file-agent-darwin-amd64 ./cmd/file-agent
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.defaultServerURL=${SERVER_URL}" -o dist/file-agent-linux-amd64 ./cmd/file-agent
+GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.defaultServerURL=${SERVER_URL}" -o dist/file-agent-windows-amd64.exe ./cmd/file-agent
 ```
 
 ## MCP Tools

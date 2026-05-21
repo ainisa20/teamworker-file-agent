@@ -125,8 +125,8 @@ func (h *MCPHandler) handleInitialize(w http.ResponseWriter, _ *http.Request) {
 func (h *MCPHandler) handleListTools(w http.ResponseWriter, id any) {
 	tools := []Tool{
 		{
-			Name:        "read_file",
-			Description: "Read the contents of a file",
+			Name:        "local_read_file",
+			Description: "Read the contents of a file on the user's local computer",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -136,8 +136,8 @@ func (h *MCPHandler) handleListTools(w http.ResponseWriter, id any) {
 			},
 		},
 		{
-			Name:        "write_file",
-			Description: "Write content to a file",
+			Name:        "local_write_file",
+			Description: "Write content to a file on the user's local computer",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -148,8 +148,8 @@ func (h *MCPHandler) handleListTools(w http.ResponseWriter, id any) {
 			},
 		},
 		{
-			Name:        "list_directory",
-			Description: "List directory contents",
+			Name:        "local_list_directory",
+			Description: "List directory contents on the user's local computer",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -158,8 +158,8 @@ func (h *MCPHandler) handleListTools(w http.ResponseWriter, id any) {
 			},
 		},
 		{
-			Name:        "search_files",
-			Description: "Search for files matching a pattern",
+			Name:        "local_search_files",
+			Description: "Search for files matching a pattern on the user's local computer",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -192,13 +192,13 @@ func (h *MCPHandler) handleCallTool(w http.ResponseWriter, req JSONRPCRequest) {
 	var errMsg string
 
 	switch params.Name {
-	case "read_file":
+	case "local_read_file":
 		result, errMsg = h.readFile(args)
-	case "write_file":
+	case "local_write_file":
 		result, errMsg = h.writeFile(args)
-	case "list_directory":
+	case "local_list_directory":
 		result, errMsg = h.listDirectory(args)
-	case "search_files":
+	case "local_search_files":
 		result, errMsg = h.searchFiles(args)
 	default:
 		errMsg = fmt.Sprintf("Unknown tool: %s", params.Name)

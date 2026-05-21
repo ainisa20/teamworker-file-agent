@@ -318,7 +318,7 @@ func startAgent(server, authToken, user string, tPort, localPort int, mToken, di
 		}
 	}()
 
-	remote := fmt.Sprintf("R:127.0.0.1:%d:127.0.0.1:%d", tPort, localPort)
+	remote := fmt.Sprintf("R:0.0.0.0:%d:127.0.0.1:%d", tPort, localPort)
 
 	fmt.Println("✓ 隧道已建立！Agent 现在可以访问您的文件。")
 	fmt.Printf("  共享目录: %s\n", absDir)
