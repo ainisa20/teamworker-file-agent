@@ -23,7 +23,7 @@ import (
 	"github.com/teamworker/file-agent/internal/mcp"
 )
 
-var version = "0.3.0"
+var version = "0.4.0"
 
 var defaultServerURL = ""
 
@@ -304,7 +304,8 @@ func startAgent(server, authToken, user string, tPort, localPort int, mToken, di
 
 	localAddr := fmt.Sprintf("127.0.0.1:%d", localPort)
 
-	mcpHandler := mcp.NewMCPHandler(absDir, mToken)
+	tunnelURL := fmt.Sprintf("http://chisel-server:%d", tPort)
+	mcpHandler := mcp.NewMCPHandler(absDir, mToken, tunnelURL, serverURL, code)
 	mcpServer := &http.Server{
 		Addr:    localAddr,
 		Handler: mcpHandler,
