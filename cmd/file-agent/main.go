@@ -37,7 +37,19 @@ type ConnectConfig struct {
 	Code     string `json:"-"` // set locally, not from server
 }
 
-var connectionCodePattern = regexp.MustCompile(`^[A-Z0-9]{4}-[A-Z0-9]{4}$`)
+var connectionCodePattern = regexp.MustCompile(`^[A-Z0-9]{4}-[A-Z0-9]{4}(@.+)?$`)
+
+func parseConnectionString(input string) (code string, serverURL string) {
+	parts := strings.SplitN(input, "@", 2)
+	code = parts[0]
+	if len(parts) == 2 && parts[1] != "" {
+		serverURL = parts[1]
+		if !strings.HasPrefix(serverURL, "http://") && !strings.HasPrefix(serverURL, "https://") {
+			serverURL = "https://" + serverURL
+		}
+	}
+	return
+}
 
 func main() {
 	serverAddr := flag.String("server", "", "Chisel server address (e.g., myserver.com:7000)")
@@ -55,11 +67,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, `file-agent v%s - Share local files via MCP over chisel tunnel
 
 Usage:
-  file-agent [connection-code] [shared-directory]
+  file-agent [connection-code[@server]] [shared-directory]
   file-agent [options] <shared-directory>
 
 Quick Connect:
-  file-agent F3K9-X2M7                        # Connect with code, share current directory
+  file-agent F3K9-X2M7@47.239.24.30:8082      # Connect with code + server
   file-agent F3K9-X2M7 /path/to/project       # Connect with code and directory
 
 Interactive:
@@ -160,21 +172,16 @@ func runInteractiveMode(serverURLFlag *string, localPort *int, keepAlive *time.D
 	if serverURL == "" {
 		serverURL = defaultServerURL
 	}
-	if serverURL == "" {
-		serverURL = promptInput("请输入服务器地址", "")
-		if serverURL == "" {
-			fmt.Println("✗ 服务器地址不能为空")
-			waitOnWindows()
-			os.Exit(1)
-		}
-	}
 
 	// Determine connection code and directory from positional args
-	var code, dirFromArg string
+	var code, dirFromArg, serverURLFromCode string
 	args := flag.Args()
 
 	if len(args) > 0 && connectionCodePattern.MatchString(args[0]) {
-		code = args[0]
+		code, serverURLFromCode = parseConnectionString(args[0])
+		if serverURLFromCode != "" {
+			serverURL = serverURLFromCode
+		}
 		if len(args) > 1 {
 			dirFromArg = args[1]
 		}
@@ -183,9 +190,22 @@ func runInteractiveMode(serverURLFlag *string, localPort *int, keepAlive *time.D
 	}
 
 	if code == "" {
-		code = promptInput("请输入连接码", "")
-		if code == "" {
+		input := promptInput("请输入连接码", "")
+		if input == "" {
 			fmt.Println("✗ 连接码不能为空")
+			waitOnWindows()
+			os.Exit(1)
+		}
+		code, serverURLFromCode = parseConnectionString(input)
+		if serverURLFromCode != "" {
+			serverURL = serverURLFromCode
+		}
+	}
+
+	if serverURL == "" {
+		serverURL = promptInput("请输入服务器地址", "")
+		if serverURL == "" {
+			fmt.Println("✗ 服务器地址不能为空")
 			waitOnWindows()
 			os.Exit(1)
 		}
