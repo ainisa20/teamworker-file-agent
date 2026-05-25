@@ -205,6 +205,18 @@ func (h *MCPHandler) handleListTools(w http.ResponseWriter, id any) {
 				"required": []any{"path"},
 			},
 		},
+		{
+			Name:        "local_upload_file",
+			Description: "Upload a file from the user's local computer to an agent's workspace on the server. The file will be accessible to the agent via a URL. Use this to share local files (documents, images, data files, archives) that the agent needs to process.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path":     map[string]any{"type": "string", "description": "Local file path relative to shared directory"},
+					"agent_id": map[string]any{"type": "string", "description": "Target agent ID (pass the agent's own ID)"},
+				},
+				"required": []any{"path", "agent_id"},
+			},
+		},
 	}
 	h.sendResult(w, id, map[string]any{"tools": tools})
 }
@@ -238,6 +250,8 @@ func (h *MCPHandler) handleCallTool(w http.ResponseWriter, req JSONRPCRequest) {
 		result, errMsg = h.searchFiles(args)
 	case "local_view_image":
 		result, errMsg = h.viewImage(args)
+	case "local_upload_file":
+		result, errMsg = h.uploadFile(args)
 	default:
 		errMsg = fmt.Sprintf("Unknown tool: %s", params.Name)
 	}
@@ -684,6 +698,88 @@ func (h *MCPHandler) viewImage(args map[string]any) (any, string) {
 	}
 	return map[string]any{
 		"text": fmt.Sprintf("[Image analysis: %s]\n%s", filepath.Base(fullPath), result.Description),
+	}, ""
+}
+
+func (h *MCPHandler) uploadFile(args map[string]any) (any, string) {
+	path, ok := args["path"].(string)
+	if !ok || path == "" {
+		return nil, "Missing or invalid path"
+	}
+	agentID, ok := args["agent_id"].(string)
+	if !ok || agentID == "" {
+		return nil, "Missing or invalid agent_id"
+	}
+
+	fullPath := h.resolvePath(path)
+	if fullPath == "" {
+		return nil, "Access denied: path outside shared directory"
+	}
+
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, "File not found"
+		}
+		return nil, fmt.Sprintf("Stat error: %v", err)
+	}
+	if info.IsDir() {
+		return nil, "Path is a directory, not a file"
+	}
+	if info.Size() > 50*1024*1024 {
+		return nil, fmt.Sprintf("File too large: %d bytes (max 50MB)", info.Size())
+	}
+
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		return nil, fmt.Sprintf("Read error: %v", err)
+	}
+
+	if h.serverURL == "" || h.code == "" {
+		return nil, "Upload unavailable: not connected via teamworker server"
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(data)
+	reqBody, _ := json.Marshal(map[string]string{
+		"code":        h.code,
+		"mcp_token":   h.token,
+		"agent_id":    agentID,
+		"filename":    filepath.Base(fullPath),
+		"content_b64": encoded,
+	})
+
+	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	client := &http.Client{Timeout: 120 * time.Second, Transport: tr}
+	url := strings.TrimRight(h.serverURL, "/") + "/api/user-tunnels/upload-file"
+	resp, err := client.Post(url, "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Sprintf("Upload API request failed: %v. Please check teamworker server connectivity.", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == 429 {
+		return nil, "Rate limit exceeded: please wait before uploading more files"
+	}
+	if resp.StatusCode == 401 {
+		return nil, "Upload API authentication failed: tunnel may be stale, reconnect required"
+	}
+	if resp.StatusCode == 413 {
+		return nil, "File too large for server: exceeds server upload limit"
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Sprintf("Upload API returned %d: %s", resp.StatusCode, string(body))
+	}
+	var result struct {
+		Success  bool   `json:"success"`
+		Filename string `json:"filename"`
+		FileURL  string `json:"file_url"`
+		Size     int64  `json:"size"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Sprintf("Parse error: %v", err)
+	}
+	return map[string]any{
+		"text": fmt.Sprintf("Uploaded %s (%d bytes) to agent %s workspace. URL: %s", result.Filename, result.Size, agentID, result.FileURL),
 	}, ""
 }
 

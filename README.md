@@ -104,3 +104,4 @@ GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.defaultServerURL=${SE
 - `write_file` - Write content to a file
 - `list_directory` - List directory contents
 - `search_files` - Search for files by name pattern
+- `upload_file` - Upload a local file to an agent's workspace on the server
