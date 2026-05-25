@@ -4,3 +4,7 @@
 .env
 *.log
 .DS_Store
+/file-agent
+/build/bin/
+/frontend/node_modules/
+/frontend/dist/
