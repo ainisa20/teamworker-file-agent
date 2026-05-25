@@ -23,7 +23,7 @@ import (
 	"github.com/teamworker/file-agent/internal/mcp"
 )
 
-var version = "0.5.0"
+var version = "0.6.0"
 
 var defaultServerURL = ""
 
