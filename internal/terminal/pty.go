@@ -35,7 +35,7 @@ func (t *Terminal) Start(ctx context.Context) error {
 
 	shell := os.Getenv("SHELL")
 	if shell == "" {
-		shell = "/bin/sh"
+		shell = "/bin/zsh"
 	}
 
 	ctx, cancel := context.WithCancel(ctx)

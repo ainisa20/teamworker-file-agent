@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -91,8 +92,9 @@ type EnvStatus struct {
 
 func (a *App) CheckEnvironment() EnvStatus {
 	env := EnvStatus{}
+	shell := userLoginShell()
 
-	if out, err := exec.Command("sh", "-l", "-c", "which npm && npm --version").CombinedOutput(); err == nil {
+	if out, err := exec.Command(shell, "-l", "-c", "which npm && npm --version").CombinedOutput(); err == nil {
 		env.HasNPM = true
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 		if len(lines) >= 2 {
@@ -100,13 +102,13 @@ func (a *App) CheckEnvironment() EnvStatus {
 		}
 	}
 
-	if out, err := exec.Command("sh", "-l", "-c", "which pip3 && pip3 --version").CombinedOutput(); err == nil {
+	if out, err := exec.Command(shell, "-l", "-c", "which pip3 && pip3 --version").CombinedOutput(); err == nil {
 		env.HasPip = true
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 		if len(lines) >= 2 {
 			env.PipVer = strings.TrimSpace(lines[len(lines)-1])
 		}
-	} else if out, err := exec.Command("sh", "-l", "-c", "which pip && pip --version").CombinedOutput(); err == nil {
+	} else if out, err := exec.Command(shell, "-l", "-c", "which pip && pip --version").CombinedOutput(); err == nil {
 		env.HasPip = true
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 		if len(lines) >= 2 {
@@ -165,7 +167,7 @@ func (a *App) GetACPAgents() []ACPAgent {
 	}
 
 	for i := range agents {
-		cmd := exec.Command("sh", "-l", "-c", agents[i].CheckCmd)
+		cmd := exec.Command(userLoginShell(), "-l", "-c", agents[i].CheckCmd)
 		output, err := cmd.CombinedOutput()
 		if err == nil {
 			agents[i].Installed = true
@@ -210,4 +212,17 @@ func (a *App) TerminalRunCommand(cmd string) {
 
 func (a *App) OpenURL(url string) {
 	exec.Command("open", url).Start()
+}
+
+func userLoginShell() string {
+	if shell := os.Getenv("SHELL"); shell != "" {
+		return shell
+	}
+	if out, err := exec.Command("dscl", ".", "-read", os.Getenv("HOME"), "UserShell").CombinedOutput(); err == nil {
+		parts := strings.Fields(string(out))
+		if len(parts) >= 2 {
+			return parts[len(parts)-1]
+		}
+	}
+	return "/bin/zsh"
 }
