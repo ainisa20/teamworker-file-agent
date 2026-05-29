@@ -42,7 +42,7 @@ func (t *Terminal) Start(ctx context.Context) error {
 	t.ctx = ctx
 	t.cancel = cancel
 
-	cmd := exec.CommandContext(ctx, shell)
+	cmd := exec.CommandContext(ctx, shell, "-l")
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
 	ptmx, err := pty.Start(cmd)

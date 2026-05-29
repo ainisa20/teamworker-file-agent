@@ -92,20 +92,26 @@ type EnvStatus struct {
 func (a *App) CheckEnvironment() EnvStatus {
 	env := EnvStatus{}
 
-	if _, err := exec.LookPath("npm"); err == nil {
+	if out, err := exec.Command("sh", "-l", "-c", "which npm && npm --version").CombinedOutput(); err == nil {
 		env.HasNPM = true
-		out, _ := exec.Command("npm", "--version").CombinedOutput()
-		env.NPMVer = strings.TrimSpace(string(out))
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(lines) >= 2 {
+			env.NPMVer = strings.TrimSpace(lines[len(lines)-1])
+		}
 	}
 
-	if _, err := exec.LookPath("pip3"); err == nil {
+	if out, err := exec.Command("sh", "-l", "-c", "which pip3 && pip3 --version").CombinedOutput(); err == nil {
 		env.HasPip = true
-		out, _ := exec.Command("pip3", "--version").CombinedOutput()
-		env.PipVer = strings.TrimSpace(string(out))
-	} else if _, err := exec.LookPath("pip"); err == nil {
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(lines) >= 2 {
+			env.PipVer = strings.TrimSpace(lines[len(lines)-1])
+		}
+	} else if out, err := exec.Command("sh", "-l", "-c", "which pip && pip --version").CombinedOutput(); err == nil {
 		env.HasPip = true
-		out, _ := exec.Command("pip", "--version").CombinedOutput()
-		env.PipVer = strings.TrimSpace(string(out))
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(lines) >= 2 {
+			env.PipVer = strings.TrimSpace(lines[len(lines)-1])
+		}
 	}
 
 	return env
@@ -159,7 +165,7 @@ func (a *App) GetACPAgents() []ACPAgent {
 	}
 
 	for i := range agents {
-		cmd := exec.Command("sh", "-c", agents[i].CheckCmd)
+		cmd := exec.Command("sh", "-l", "-c", agents[i].CheckCmd)
 		output, err := cmd.CombinedOutput()
 		if err == nil {
 			agents[i].Installed = true
