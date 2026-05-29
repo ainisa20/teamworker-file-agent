@@ -418,3 +418,171 @@ html, body {
   background: var(--color-divider);
   margin: var(--space-sm) 0;
 }
+
+/* ===== Agent Grid ===== */
+.agent-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+}
+
+.agent-card {
+  position: relative;
+  padding: var(--space-sm) var(--space-md);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: center;
+  user-select: none;
+}
+
+.agent-card--installed {
+  border-color: #b7eb8f;
+}
+
+.agent-card--installed.agent-card--selected {
+  background: #f6ffed;
+  border-color: var(--color-success);
+  box-shadow: 0 0 0 2px rgba(82, 196, 26, 0.2);
+}
+
+.agent-card--not-installed {
+  opacity: 0.75;
+  cursor: default;
+}
+
+.agent-card--not-installed:hover {
+  opacity: 0.9;
+}
+
+.agent-card__icon {
+  font-size: 18px;
+  margin-bottom: 2px;
+}
+
+.agent-card__name {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.agent-card__status {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+  min-height: 16px;
+}
+
+.agent-installed {
+  color: var(--color-success);
+}
+
+.agent-not-installed {
+  color: var(--color-text-placeholder);
+}
+
+.agent-card__install {
+  margin-top: 4px;
+  font-size: 11px !important;
+  padding: 3px 10px !important;
+}
+
+/* ===== Environment Status ===== */
+.env-ok {
+  font-size: 12px;
+  color: var(--color-success);
+  margin-bottom: var(--space-xs);
+}
+
+.env-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #fff7e6;
+  border: 1px solid #ffe58f;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: #ad6800;
+  margin-bottom: var(--space-sm);
+}
+
+.env-warning__link {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.env-warning__link:hover {
+  text-decoration: underline;
+}
+
+/* ===== npm Help Banner ===== */
+.npm-help-banner {
+  display: flex;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background: #e6f7ff;
+  border: 1px solid #91d5ff;
+  border-radius: var(--radius-lg);
+  font-size: 13px;
+  line-height: 1.6;
+  margin-top: var(--space-sm);
+}
+
+.npm-help-banner__icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.npm-help-banner__content p {
+  margin: 0 0 var(--space-xs) 0;
+}
+
+.npm-help-banner__link {
+  display: inline-block;
+  margin-top: var(--space-xs);
+  padding: 6px 14px;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.npm-help-banner__link:hover {
+  opacity: 0.9;
+}
+
+/* ===== Terminal ===== */
+.terminal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  padding: var(--space-xs) 0;
+}
+
+.terminal-wrapper {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-top: var(--space-xs);
+}
+
+.terminal-xterm {
+  background: #1e1e1e;
+  padding: 4px;
+  min-height: 160px;
+}
+
+.terminal-xterm .xterm {
+  padding: 4px;
+}
+
+/* ===== Small Value ===== */
+.info-card__value--small {
+  font-size: 11px;
+}

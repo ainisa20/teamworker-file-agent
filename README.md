@@ -1,10 +1,10 @@
-# file-agent v0.3.0
+# file-agent v0.8.0
 
-Share local files via MCP (Model Context Protocol) over a chisel reverse tunnel.
+Share local files via MCP + remote code execution via ACP over chisel reverse tunnels.
 
 ## Quick Start
 
-1. Get a connection code from the TeamWorker UI (Agent List → 本地连接)
+1. Get a connection code from the TeamWorker UI
 2. Download the binary for your platform from `dist/`
 3. Run with connection code:
 
@@ -18,7 +18,7 @@ Or double-click the binary and enter the code interactively:
 ```
 $ ./file-agent-darwin-arm64
 
-📁 TeamWorker 文件共享客户端 v0.3.0
+📁 TeamWorker 文件共享客户端 v0.8.0
 
 请输入连接码: F3K9-X2M7
 请输入共享目录 [当前目录 .]: /Users/zhangsan/project
@@ -30,21 +30,40 @@ $ ./file-agent-darwin-arm64
   按 Ctrl+C 断开连接
 ```
 
+## Desktop App (macOS)
+
+`file-agent-macOS-arm64.zip` 包含 Wails 桌面应用，支持：
+
+- 连接码 + 共享目录选择
+- 外部智能体检测与一键安装（OpenCode / Claude Code / Codex / Qwen Code）
+- npm 环境检测与安装引导
+- 交互式 PTY 终端（xterm.js）
+- MCP 文件共享 + ACP 代码执行双隧道
+
 ## Architecture
 
 ```
-Your Computer                           Server (Docker Network)
-┌──────────────────────┐               ┌─────────────────────────────┐
-│ file-agent           │               │ chisel-server :7000         │
-│  ├─ MCP server       │◄── reverse ──│  └─ :9100 (user A tunnel)  │
-│  │  :18080           │    tunnel     │  └─ :9101 (user B tunnel)  │
-│  └─ chisel client    │               │                             │
-│     → ws://server     │               │ team_worker → chisel:9100  │
-└──────────────────────┘               │   → file-agent MCP server   │
-                                       │                             │
-                                       │ qwenpaw → team_worker      │
-                                       │   → agent reads your files │
-                                       └─────────────────────────────┘
+用户本地 Mac (file-agent):
+┌─────────────────────────────────────────────────┐
+│  MCP server :18080 (文件共享)                     │
+│  ACP bridge :4096  (代码执行, stdio_to_tcp.py)    │
+│  Chisel client → server:7000                     │
+│    R:0.0.0.0:9101 → :18080 (MCP)                 │
+│    R:0.0.0.0:9102 → :4096  (ACP)                 │
+└─────────────────────────────────────────────────┘
+
+服务器 Docker 网络:
+┌─────────────────────────────────────────────────┐
+│  chisel-server :7000                             │
+│    :9101 → userA MCP   :9102 → userA ACP         │
+│    :9103 → userB MCP   :9104 → userB ACP         │
+│                                                   │
+│  acp-mux :4099                                   │
+│    RUNNER:opencode → chisel-server:9102           │
+│                                                   │
+│  qwenpaw                                         │
+│    → acp-mux:4099 → chisel:9102 → 用户本地 opencode│
+└─────────────────────────────────────────────────┘
 ```
 
 ### Security
@@ -85,10 +104,14 @@ Options:
 ## Build from Source
 
 ```bash
+# CLI
 go build -o file-agent ./cmd/file-agent
+
+# Wails 桌面版 (macOS)
+wails build -platform darwin/universal -ldflags "-s -w"
 ```
 
-Cross-compile with embedded server URL:
+Cross-compile CLI with embedded server URL:
 ```bash
 SERVER_URL="https://47.239.24.30:8082"
 mkdir -p dist

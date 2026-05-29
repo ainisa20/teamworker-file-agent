@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
@@ -23,18 +24,19 @@ import (
 	"github.com/teamworker/file-agent/internal/mcp"
 )
 
-var version = "0.6.0"
+var version = "0.8.0"
 
 var defaultServerURL = ""
 
 type ConnectConfig struct {
 	Server   string `json:"server"`
 	Port     int    `json:"port"`
+	ACPPort  int    `json:"port_acp"`
 	Auth     string `json:"auth"`
 	User     string `json:"user"`
 	MCPToken string `json:"mcp_token"`
 	AgentID  string `json:"agent_id"`
-	Code     string `json:"-"` // set locally, not from server
+	Code     string `json:"-"`
 }
 
 var connectionCodePattern = regexp.MustCompile(`^[A-Z0-9]{4}-[A-Z0-9]{4}(@.+)?$`)
@@ -159,7 +161,7 @@ func runLegacyMode(serverAddr, auth, userID *string, tunnelPort *int, localPort 
 		dir = flag.Arg(0)
 	}
 
-	startAgent(server, authToken, user, tPort, *localPort, mToken, dir, *keepAlive, *verbose, "", "")
+	startAgent(server, authToken, user, tPort, *localPort, mToken, dir, *keepAlive, *verbose, "", "", nil)
 }
 
 func runInteractiveMode(serverURLFlag *string, localPort *int, keepAlive *time.Duration, verbose *bool) {
@@ -230,7 +232,7 @@ func runInteractiveMode(serverURLFlag *string, localPort *int, keepAlive *time.D
 
 	fmt.Printf("✓ 正在连接 %s...\n", cfg.Server)
 	cfg.Code = code
-	startAgent(cfg.Server, cfg.Auth, cfg.User, cfg.Port, *localPort, cfg.MCPToken, dir, *keepAlive, *verbose, serverURL, code)
+	startAgent(cfg.Server, cfg.Auth, cfg.User, cfg.Port, *localPort, cfg.MCPToken, dir, *keepAlive, *verbose, serverURL, code, cfg)
 }
 
 func connectByCode(serverURL, code string) (*ConnectConfig, error) {
@@ -298,7 +300,7 @@ func promptInput(prompt string, defaultValue string) string {
 	return defaultValue
 }
 
-func startAgent(server, authToken, user string, tPort, localPort int, mToken, dir string, keepAlive time.Duration, verbose bool, serverURL, code string) {
+func startAgent(server, authToken, user string, tPort, localPort int, mToken, dir string, keepAlive time.Duration, verbose bool, serverURL, code string, cfg *ConnectConfig) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		fmt.Printf("✗ 无法解析目录: %v\n", err)
@@ -339,19 +341,42 @@ func startAgent(server, authToken, user string, tPort, localPort int, mToken, di
 		}
 	}()
 
-	remote := fmt.Sprintf("R:0.0.0.0:%d:127.0.0.1:%d", tPort, localPort)
+	remotes := []string{
+		fmt.Sprintf("R:0.0.0.0:%d:127.0.0.1:%d", tPort, localPort),
+	}
 
 	fmt.Println("✓ 隧道已建立！Agent 现在可以访问您的文件。")
 	fmt.Printf("  共享目录: %s\n", absDir)
 	fmt.Printf("  用户:     %s\n", user)
-	fmt.Printf("  隧道:     R:127.0.0.1:%d → 127.0.0.1:%d\n", tPort, localPort)
+	fmt.Printf("  MCP:      R:127.0.0.1:%d → 127.0.0.1:%d\n", tPort, localPort)
+
+	if cfg != nil && cfg.ACPPort > 0 {
+		scriptPath := findScriptCLI("stdio_to_tcp.py")
+		if scriptPath != "" {
+			acpLocalPort := 4096
+			acpCmd := exec.CommandContext(context.Background(), "python3", scriptPath,
+				"--port", fmt.Sprintf("%d", acpLocalPort),
+				"--hostname", "127.0.0.1",
+			)
+			acpCmd.Stdout = os.Stdout
+			acpCmd.Stderr = os.Stderr
+			if err := acpCmd.Start(); err == nil {
+				remotes = append(remotes,
+					fmt.Sprintf("R:0.0.0.0:%d:127.0.0.1:%d", cfg.ACPPort, acpLocalPort))
+				fmt.Printf("  ACP:      R:127.0.0.1:%d → 127.0.0.1:%d\n", cfg.ACPPort, acpLocalPort)
+			} else {
+				fmt.Printf("⚠ ACP bridge 启动失败: %v\n", err)
+			}
+		}
+	}
+
 	fmt.Println("  按 Ctrl+C 断开连接")
 
 	chiselConfig := &chclient.Config{
 		Server:    server,
 		Auth:      fmt.Sprintf("%s:%s", user, authToken),
 		KeepAlive: keepAlive,
-		Remotes:   []string{remote},
+		Remotes:   remotes,
 		Verbose:   verbose,
 	}
 
@@ -437,6 +462,22 @@ func mask(n int) string {
 		mask[i] = '*'
 	}
 	return string(mask)
+}
+
+func findScriptCLI(name string) string {
+	if exe, err := os.Executable(); err == nil {
+		p := filepath.Join(filepath.Dir(exe), name)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	if _, err := os.Stat(name); err == nil {
+		return name
+	}
+	if _, err := os.Stat("acp-bridge/" + name); err == nil {
+		return "acp-bridge/" + name
+	}
+	return ""
 }
 
 func waitOnWindows() {

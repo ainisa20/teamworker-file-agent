@@ -9,9 +9,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	chclient "github.com/jpillora/chisel/client"
@@ -22,21 +24,23 @@ import (
 type ConnectConfig struct {
 	Server   string `json:"server"`
 	Port     int    `json:"port"`
+	ACPPort  int    `json:"port_acp"`
 	Auth     string `json:"auth"`
 	User     string `json:"user"`
 	MCPToken string `json:"mcp_token"`
 	AgentID  string `json:"agent_id"`
-	Code     string `json:"-"` // set locally, not from server
+	Code     string `json:"-"`
 }
 
 // State represents the current agent state, exposed to the frontend via JSON.
 type State struct {
-	Status     string `json:"status"`      // disconnected, connecting, connected, error
-	Message    string `json:"message"`     // human-readable status message
-	ServerURL  string `json:"serverUrl"`   // the server URL being used
-	Code       string `json:"code"`        // connection code
-	SharedDir  string `json:"sharedDir"`   // absolute path to shared directory
-	TunnelInfo string `json:"tunnelInfo"`  // e.g. "R:127.0.0.1:9100 → 127.0.0.1:18080"
+	Status     string `json:"status"`
+	Message    string `json:"message"`
+	ServerURL  string `json:"serverUrl"`
+	Code       string `json:"code"`
+	SharedDir  string `json:"sharedDir"`
+	TunnelInfo string `json:"tunnelInfo"`
+	ACPEnabled bool   `json:"acpEnabled"`
 }
 
 // Agent holds all business logic for the file sharing agent.
@@ -46,15 +50,17 @@ type Agent struct {
 	cfg        *ConnectConfig
 	serverURL  string
 
-	// connection parameters
 	localPort int
 	keepAlive time.Duration
 	verbose   bool
 
-	// runtime
-	mcpServer  *http.Server
-	ctx        context.Context
-	cancel     context.CancelFunc
+	mcpServer *http.Server
+	ctx       context.Context
+	cancel    context.CancelFunc
+
+	acpRunner    string
+	acpLocalPort int
+	acpCmd       *exec.Cmd
 }
 
 // NewAgent creates a new Agent instance.
@@ -81,6 +87,12 @@ func (a *Agent) SetKeepAlive(d time.Duration) {
 // SetVerbose enables or disables verbose logging.
 func (a *Agent) SetVerbose(v bool) {
 	a.verbose = v
+}
+
+func (a *Agent) SetACPRunner(runner string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.acpRunner = runner
 }
 
 // ConnectByCode performs an HTTP GET to obtain tunnel configuration.
@@ -217,6 +229,7 @@ func (a *Agent) Start(dir string) error {
 	a.mu.Lock()
 	cfg := a.cfg
 	serverURL := a.serverURL
+	runner := a.acpRunner
 	a.mu.Unlock()
 
 	if cfg == nil {
@@ -238,20 +251,34 @@ func (a *Agent) Start(dir string) error {
 	a.ctx = ctx
 	a.cancel = cancel
 
-	// Start MCP server
 	go func() {
 		if err := a.mcpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("MCP server error: %v", err)
 		}
 	}()
 
-	// Start chisel reconnect loop
-	remote := fmt.Sprintf("R:0.0.0.0:%d:127.0.0.1:%d", cfg.Port, a.localPort)
+	remotes := []string{
+		fmt.Sprintf("R:0.0.0.0:%d:127.0.0.1:%d", cfg.Port, a.localPort),
+	}
+	tunnelInfo := fmt.Sprintf("MCP: :%d → :%d", cfg.Port, a.localPort)
+	ACPEnabled := false
+
+	if cfg.ACPPort > 0 && runner != "" {
+		if err := a.startACPBridge(runner); err != nil {
+			log.Printf("ACP bridge failed (file sharing still works): %v", err)
+		} else {
+			remotes = append(remotes,
+				fmt.Sprintf("R:0.0.0.0:%d:127.0.0.1:%d", cfg.ACPPort, a.acpLocalPort))
+			tunnelInfo += fmt.Sprintf(", ACP: :%d → :%d (%s)", cfg.ACPPort, a.acpLocalPort, runner)
+			ACPEnabled = true
+		}
+	}
+
 	chiselConfig := &chclient.Config{
 		Server:    cfg.Server,
 		Auth:      fmt.Sprintf("%s:%s", cfg.User, cfg.Auth),
 		KeepAlive: a.keepAlive,
-		Remotes:   []string{remote},
+		Remotes:   remotes,
 		Verbose:   a.verbose,
 	}
 
@@ -260,7 +287,8 @@ func (a *Agent) Start(dir string) error {
 	a.mu.Lock()
 	a.state.Status = "connected"
 	a.state.Message = "Tunnel established"
-	a.state.TunnelInfo = fmt.Sprintf("R:127.0.0.1:%d → 127.0.0.1:%d", cfg.Port, a.localPort)
+	a.state.TunnelInfo = tunnelInfo
+	a.state.ACPEnabled = ACPEnabled
 	a.mu.Unlock()
 
 	return nil
@@ -279,10 +307,67 @@ func (a *Agent) Stop() {
 		a.mcpServer.Close()
 		a.mcpServer = nil
 	}
+	a.stopACPBridge()
 
 	a.state = State{
 		Status: "disconnected",
 	}
+}
+
+func (a *Agent) startACPBridge(runner string) error {
+	acpPort := 4096
+	a.acpLocalPort = acpPort
+
+	script := findScript("stdio_to_tcp.py")
+	if script == "" {
+		return fmt.Errorf("stdio_to_tcp.py not found (must be alongside file-agent)")
+	}
+
+	ctx := a.ctx
+	cmd := exec.CommandContext(ctx, "python3", script,
+		"--port", fmt.Sprintf("%d", acpPort),
+		"--hostname", "127.0.0.1",
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start stdio_to_tcp.py: %w", err)
+	}
+
+	a.acpCmd = cmd
+	log.Printf("ACP bridge started on :%d for %s (PID: %d)", acpPort, runner, cmd.Process.Pid)
+	return nil
+}
+
+func (a *Agent) stopACPBridge() {
+	if a.acpCmd != nil && a.acpCmd.Process != nil {
+		a.acpCmd.Process.Signal(syscall.SIGTERM)
+		done := make(chan error, 1)
+		go func() { done <- a.acpCmd.Wait() }()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			a.acpCmd.Process.Kill()
+		}
+		a.acpCmd = nil
+	}
+}
+
+func findScript(name string) string {
+	if exe, err := os.Executable(); err == nil {
+		p := filepath.Join(filepath.Dir(exe), name)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	if _, err := os.Stat(name); err == nil {
+		return name
+	}
+	if _, err := os.Stat("acp-bridge/" + name); err == nil {
+		return "acp-bridge/" + name
+	}
+	return ""
 }
 
 // reconnectLoop manages the chisel client with exponential backoff.

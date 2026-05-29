@@ -18,8 +18,8 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:     "TeamWorker 文件共享",
-		Width:     480,
-		Height:    640,
+		Width:     520,
+		Height:    820,
 		Frameless: false,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
