@@ -12,7 +12,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "0.8.2"
+var appVersion = "0.8.3"
 
 const NPMInstallGuide = "https://blog.csdn.net/weixin_41929531/article/details/158885541"
 

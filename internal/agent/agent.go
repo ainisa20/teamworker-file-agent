@@ -61,6 +61,7 @@ type Agent struct {
 	acpRunner    string
 	acpLocalPort int
 	acpCmd       *exec.Cmd
+	acpLogFile   *os.File
 }
 
 // NewAgent creates a new Agent instance.
@@ -236,6 +237,10 @@ func (a *Agent) Start(dir string) error {
 		return fmt.Errorf("no connection config; call Connect first")
 	}
 
+	if cfg.ACPPort > 0 && runner == "" {
+		runner = "opencode"
+	}
+
 	a.setState("connecting", "Starting MCP server and tunnel...")
 
 	localAddr := fmt.Sprintf("127.0.0.1:%d", a.localPort)
@@ -265,7 +270,7 @@ func (a *Agent) Start(dir string) error {
 
 	if cfg.ACPPort > 0 && runner != "" {
 		if err := a.startACPBridge(runner); err != nil {
-			log.Printf("ACP bridge failed (file sharing still works): %v", err)
+			tunnelInfo += fmt.Sprintf(" [ACP ERROR: %v]", err)
 		} else {
 			remotes = append(remotes,
 				fmt.Sprintf("R:0.0.0.0:%d:127.0.0.1:%d", cfg.ACPPort, a.acpLocalPort))
@@ -320,22 +325,43 @@ func (a *Agent) startACPBridge(runner string) error {
 
 	script := findScript("stdio_to_tcp.py")
 	if script == "" {
-		return fmt.Errorf("stdio_to_tcp.py not found (must be alongside file-agent)")
+		return fmt.Errorf("stdio_to_tcp.py not found")
 	}
+
+	homeDir, _ := os.UserHomeDir()
+	logFile := filepath.Join(homeDir, ".file-agent-acp.log")
+	logF, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		logF = os.Stderr
+	} else {
+		log.Printf("ACP bridge log: %s", logFile)
+	}
+	fmt.Fprintf(logF, "\n=== %s ACP bridge starting ===\n", time.Now().Format(time.RFC3339))
+	fmt.Fprintf(logF, "script=%s port=%d runner=%s\n", script, acpPort, runner)
 
 	ctx := a.ctx
 	cmd := exec.CommandContext(ctx, "python3", script,
 		"--port", fmt.Sprintf("%d", acpPort),
 		"--hostname", "127.0.0.1",
 	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = logF
+	cmd.Stderr = logF
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start stdio_to_tcp.py: %w", err)
+		fmt.Fprintf(logF, "START FAILED: %v\n", err)
+		return fmt.Errorf("stdio_to_tcp.py start: %w", err)
+	}
+
+	fmt.Fprintf(logF, "PID=%d, waiting 500ms to check liveness...\n", cmd.Process.Pid)
+	time.Sleep(500 * time.Millisecond)
+
+	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		fmt.Fprintf(logF, "EXITED IMMEDIATELY code=%d\n", cmd.ProcessState.ExitCode())
+		return fmt.Errorf("stdio_to_tcp.py exited immediately (code %d)", cmd.ProcessState.ExitCode())
 	}
 
 	a.acpCmd = cmd
+	a.acpLogFile = logF
 	log.Printf("ACP bridge started on :%d for %s (PID: %d)", acpPort, runner, cmd.Process.Pid)
 	return nil
 }
@@ -351,6 +377,10 @@ func (a *Agent) stopACPBridge() {
 			a.acpCmd.Process.Kill()
 		}
 		a.acpCmd = nil
+	}
+	if a.acpLogFile != nil {
+		a.acpLogFile.Close()
+		a.acpLogFile = nil
 	}
 }
 
