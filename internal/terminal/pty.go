@@ -2,29 +2,29 @@ package terminal
 
 import (
 	"context"
-	"os"
-	"os/exec"
 	"sync"
-
-	"github.com/creack/pty"
 )
 
-// Terminal manages a PTY subprocess for interactive shell access.
+type ptyProcess interface {
+	read(buf []byte) (int, error)
+	write(data []byte) (int, error)
+	resize(rows, cols uint16) error
+	close()
+	wait() (exitCode int, err error)
+}
+
 type Terminal struct {
 	mu      sync.Mutex
 	ctx     context.Context
 	cancel  context.CancelFunc
-	ptmx    *os.File
-	cmd     *exec.Cmd
+	proc    ptyProcess
 	running bool
 }
 
-// NewTerminal creates a new Terminal instance.
 func NewTerminal() *Terminal {
 	return &Terminal{}
 }
 
-// Start launches a PTY shell.
 func (t *Terminal) Start(ctx context.Context) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -33,26 +33,17 @@ func (t *Terminal) Start(ctx context.Context) error {
 		return nil
 	}
 
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/zsh"
-	}
-
 	ctx, cancel := context.WithCancel(ctx)
 	t.ctx = ctx
 	t.cancel = cancel
 
-	cmd := exec.CommandContext(ctx, shell, "-l")
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-
-	ptmx, err := pty.Start(cmd)
+	proc, err := startProcess(ctx)
 	if err != nil {
 		cancel()
 		return err
 	}
 
-	t.ptmx = ptmx
-	t.cmd = cmd
+	t.proc = proc
 	t.running = true
 
 	go t.readOutput()
@@ -61,7 +52,6 @@ func (t *Terminal) Start(ctx context.Context) error {
 	return nil
 }
 
-// readOutput reads PTY output and pushes it to the frontend via EventEmitFunc.
 func (t *Terminal) readOutput() {
 	buf := make([]byte, 4096)
 	for {
@@ -71,7 +61,7 @@ func (t *Terminal) readOutput() {
 		default:
 		}
 
-		n, err := t.ptmx.Read(buf)
+		n, err := t.proc.read(buf)
 		if err != nil {
 			t.emit("terminal:exit", "")
 			return
@@ -82,15 +72,8 @@ func (t *Terminal) readOutput() {
 	}
 }
 
-// waitExit waits for the subprocess to exit.
 func (t *Terminal) waitExit() {
-	err := t.cmd.Wait()
-	code := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			code = exitErr.ExitCode()
-		}
-	}
+	code, _ := t.proc.wait()
 
 	t.mu.Lock()
 	t.running = false
@@ -102,33 +85,27 @@ func (t *Terminal) waitExit() {
 	})
 }
 
-// Write sends user input to the PTY.
 func (t *Terminal) Write(data string) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if !t.running || t.ptmx == nil {
+	if !t.running || t.proc == nil {
 		return nil
 	}
-	_, err := t.ptmx.Write([]byte(data))
+	_, err := t.proc.write([]byte(data))
 	return err
 }
 
-// Resize adjusts the PTY dimensions.
 func (t *Terminal) Resize(rows, cols uint16) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if !t.running || t.ptmx == nil {
+	if !t.running || t.proc == nil {
 		return nil
 	}
-	return pty.Setsize(t.ptmx, &pty.Winsize{
-		Rows: rows,
-		Cols: cols,
-	})
+	return t.proc.resize(rows, cols)
 }
 
-// Close shuts down the terminal.
 func (t *Terminal) Close() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -137,21 +114,19 @@ func (t *Terminal) Close() {
 		t.cancel()
 		t.cancel = nil
 	}
-	if t.ptmx != nil {
-		t.ptmx.Close()
-		t.ptmx = nil
+	if t.proc != nil {
+		t.proc.close()
+		t.proc = nil
 	}
 	t.running = false
 }
 
-// IsRunning returns whether the PTY subprocess is active.
 func (t *Terminal) IsRunning() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.running
 }
 
-// RunCommand writes a command string followed by newline to the PTY.
 func (t *Terminal) RunCommand(ctx context.Context, cmdStr string) error {
 	if !t.IsRunning() {
 		if err := t.Start(ctx); err != nil {
@@ -161,7 +136,6 @@ func (t *Terminal) RunCommand(ctx context.Context, cmdStr string) error {
 	return t.Write(cmdStr + "\n")
 }
 
-// EventEmitFunc is set by app.go at startup to push events to the Wails frontend.
 var EventEmitFunc func(name string, data interface{})
 
 func (t *Terminal) emit(name string, data interface{}) {
