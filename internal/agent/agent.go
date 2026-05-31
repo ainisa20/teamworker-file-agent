@@ -344,9 +344,9 @@ func (a *Agent) startACPBridge(runner string) error {
 	acpPort := 4096
 	a.acpLocalPort = acpPort
 
-	script := findScript("stdio_to_tcp.py")
-	if script == "" {
-		return fmt.Errorf("stdio_to_tcp.py not found")
+	script, err := EnsureACPBridge()
+	if err != nil {
+		return fmt.Errorf("failed to extract ACP bridge script: %w", err)
 	}
 
 	homeDir, _ := os.UserHomeDir()
@@ -364,11 +364,9 @@ func (a *Agent) startACPBridge(runner string) error {
 	cmd := exec.CommandContext(ctx, "python3", script,
 		"--port", fmt.Sprintf("%d", acpPort),
 		"--hostname", "127.0.0.1",
+		"--runner", runner,
 	)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow:    true,
-		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
-	}
+	setCmdAttr(cmd)
 	cmd.Stdout = logF
 	cmd.Stderr = logF
 
@@ -409,23 +407,6 @@ func (a *Agent) stopACPBridge() {
 	}
 }
 
-func findScript(name string) string {
-	if exe, err := os.Executable(); err == nil {
-		p := filepath.Join(filepath.Dir(exe), name)
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	if _, err := os.Stat(name); err == nil {
-		return name
-	}
-	if _, err := os.Stat("acp-bridge/" + name); err == nil {
-		return "acp-bridge/" + name
-	}
-	return ""
-}
-
-// reconnectLoop manages the chisel client with exponential backoff.
 func (a *Agent) reconnectLoop(ctx context.Context, config *chclient.Config, serverURL, code string) {
 	backoff := time.Second
 	maxBackoff := 30 * time.Second
