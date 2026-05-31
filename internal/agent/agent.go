@@ -66,6 +66,14 @@ type Agent struct {
 
 // NewAgent creates a new Agent instance.
 func NewAgent() *Agent {
+	// Redirect log output to file for GUI mode (no console)
+	homeDir, _ := os.UserHomeDir()
+	logPath := filepath.Join(homeDir, ".file-agent.log")
+	if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
+		log.SetOutput(f)
+		log.Printf("[INIT] log file: %s", logPath)
+	}
+
 	return &Agent{
 		state: State{
 			Status: "disconnected",
@@ -125,6 +133,9 @@ func ConnectByCode(serverURL, code string) (*ConnectConfig, error) {
 	if err := json.Unmarshal(body, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
+
+	log.Printf("[ACP-DEBUG] server config: server=%s, port=%d, port_acp=%d, user=%s, has_auth=%v, has_mcp_token=%v",
+		cfg.Server, cfg.Port, cfg.ACPPort, cfg.User, cfg.Auth != "", cfg.MCPToken != "")
 
 	if cfg.Server == "" || cfg.Port == 0 || cfg.Auth == "" || cfg.User == "" || cfg.MCPToken == "" {
 		return nil, fmt.Errorf("server returned incomplete configuration")
@@ -237,8 +248,11 @@ func (a *Agent) Start(dir string) error {
 		return fmt.Errorf("no connection config; call Connect first")
 	}
 
+	log.Printf("[ACP-DEBUG] cfg.ACPPort=%d, runner=%q", cfg.ACPPort, runner)
+
 	if cfg.ACPPort > 0 && runner == "" {
 		runner = "opencode"
+		log.Printf("[ACP-DEBUG] no runner set, defaulting to %q", runner)
 	}
 
 	a.setState("connecting", "Starting MCP server and tunnel...")
@@ -268,15 +282,22 @@ func (a *Agent) Start(dir string) error {
 	tunnelInfo := fmt.Sprintf("MCP: :%d → :%d", cfg.Port, a.localPort)
 	ACPEnabled := false
 
+	log.Printf("[ACP-DEBUG] checking ACP: ACPPort=%d, runner=%q", cfg.ACPPort, runner)
+
 	if cfg.ACPPort > 0 && runner != "" {
+		log.Printf("[ACP-DEBUG] starting ACP bridge with runner=%q ...", runner)
 		if err := a.startACPBridge(runner); err != nil {
+			log.Printf("[ACP-DEBUG] ACP bridge failed: %v", err)
 			tunnelInfo += fmt.Sprintf(" [ACP ERROR: %v]", err)
 		} else {
 			remotes = append(remotes,
 				fmt.Sprintf("R:0.0.0.0:%d:127.0.0.1:%d", cfg.ACPPort, a.acpLocalPort))
 			tunnelInfo += fmt.Sprintf(", ACP: :%d → :%d (%s)", cfg.ACPPort, a.acpLocalPort, runner)
 			ACPEnabled = true
+			log.Printf("[ACP-DEBUG] ACP enabled successfully")
 		}
+	} else {
+		log.Printf("[ACP-DEBUG] ACP skipped: ACPPort=%d (need >0), runner=%q (need non-empty)", cfg.ACPPort, runner)
 	}
 
 	chiselConfig := &chclient.Config{
@@ -344,6 +365,10 @@ func (a *Agent) startACPBridge(runner string) error {
 		"--port", fmt.Sprintf("%d", acpPort),
 		"--hostname", "127.0.0.1",
 	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+	}
 	cmd.Stdout = logF
 	cmd.Stderr = logF
 

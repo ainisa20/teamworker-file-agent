@@ -5,6 +5,7 @@ package main
 import (
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 func userLoginShell() string {
@@ -19,13 +20,21 @@ func openURL(url string) {
 }
 
 func findCommand(name string) string {
-	return "where " + name
+	return "where.exe " + name
 }
 
 func runShellCommand(cmdStr string) ([]byte, error) {
 	shell := userLoginShell()
-	if strings.HasSuffix(strings.ToLower(shell), "powershell.exe") || strings.HasSuffix(strings.ToLower(shell), "pwsh.exe") {
-		return exec.Command(shell, "-NoProfile", "-Command", cmdStr).CombinedOutput()
+	hideWindow := &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
 	}
-	return exec.Command(shell, "/c", cmdStr).CombinedOutput()
+	if strings.HasSuffix(strings.ToLower(shell), "powershell.exe") || strings.HasSuffix(strings.ToLower(shell), "pwsh.exe") {
+		cmd := exec.Command(shell, "-NoProfile", "-Command", cmdStr)
+		cmd.SysProcAttr = hideWindow
+		return cmd.CombinedOutput()
+	}
+	cmd := exec.Command(shell, "/c", cmdStr)
+	cmd.SysProcAttr = hideWindow
+	return cmd.CombinedOutput()
 }

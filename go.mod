@@ -3,6 +3,7 @@ module github.com/teamworker/file-agent
 go 1.26.3
 
 require (
+	github.com/UserExistsError/conpty v0.1.4
 	github.com/creack/pty v1.1.24
 	github.com/jpillora/chisel v1.11.6
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
@@ -12,7 +13,6 @@ require (
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
-	github.com/UserExistsError/conpty v0.1.4 // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect

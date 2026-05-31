@@ -91,25 +91,22 @@ type EnvStatus struct {
 func (a *App) CheckEnvironment() EnvStatus {
 	env := EnvStatus{}
 
-	if out, err := runShellCommand(findCommand("npm") + " && npm --version"); err == nil {
+	if out, err := runShellCommand("npm --version"); err == nil {
 		env.HasNPM = true
-		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-		if len(lines) >= 2 {
-			env.NPMVer = strings.TrimSpace(lines[len(lines)-1])
-		}
+		env.NPMVer = strings.TrimSpace(string(out))
 	}
 
-	if out, err := runShellCommand(findCommand("pip3") + " && pip3 --version"); err == nil {
+	if out, err := runShellCommand("pip3 --version"); err == nil {
 		env.HasPip = true
-		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		lines := strings.Split(strings.TrimSpace(string(out)), " ")
 		if len(lines) >= 2 {
-			env.PipVer = strings.TrimSpace(lines[len(lines)-1])
+			env.PipVer = strings.TrimSpace(lines[1])
 		}
-	} else if out, err := runShellCommand(findCommand("pip") + " && pip --version"); err == nil {
+	} else if out, err := runShellCommand("pip --version"); err == nil {
 		env.HasPip = true
-		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		lines := strings.Split(strings.TrimSpace(string(out)), " ")
 		if len(lines) >= 2 {
-			env.PipVer = strings.TrimSpace(lines[len(lines)-1])
+			env.PipVer = strings.TrimSpace(lines[1])
 		}
 	}
 
