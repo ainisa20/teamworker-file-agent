@@ -8,3 +8,5 @@
 /build/bin/
 /frontend/node_modules/
 /frontend/dist/
+__pycache__/
+.omo/

@@ -361,7 +361,20 @@ func (a *Agent) startACPBridge(runner string) error {
 	fmt.Fprintf(logF, "script=%s port=%d runner=%s\n", script, acpPort, runner)
 
 	ctx := a.ctx
-	cmd := exec.CommandContext(ctx, "python3", script,
+
+	pythonBin := "python3"
+	if _, err := exec.LookPath("python3"); err != nil {
+		if _, err := exec.LookPath("python"); err == nil {
+			pythonBin = "python"
+		} else if _, err := exec.LookPath("py"); err == nil {
+			pythonBin = "py"
+		} else {
+			return fmt.Errorf("ACP bridge 需要 Python，请安装 Python 3")
+		}
+	}
+	log.Printf("[ACP-DEBUG] using python: %s", pythonBin)
+
+	cmd := exec.CommandContext(ctx, pythonBin, script,
 		"--port", fmt.Sprintf("%d", acpPort),
 		"--hostname", "127.0.0.1",
 		"--runner", runner,
@@ -433,6 +446,8 @@ func (a *Agent) reconnectLoop(ctx context.Context, config *chclient.Config, serv
 				}
 			}
 			client.Wait()
+		} else {
+			log.Printf("Chisel connection error: %v", err)
 		}
 
 		select {

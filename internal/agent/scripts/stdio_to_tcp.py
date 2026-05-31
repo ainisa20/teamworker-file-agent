@@ -17,16 +17,31 @@ RUNNERS = {
 }
 
 
+def _resolve_exe(name):
+    """Resolve executable name to its full path.
+
+    On Windows, commands installed via npm (e.g. opencode) are .cmd wrappers.
+    subprocess.Popen cannot find them by bare name; we must use the full path
+    returned by shutil.which().
+    """
+    resolved = shutil.which(name)
+    if resolved:
+        return resolved
+    return name
+
+
 def resolve_runner(runner_name):
     """Resolve runner name to command list, checking PATH availability."""
     cmd = RUNNERS.get(runner_name)
     if cmd:
-        if shutil.which(cmd[0]):
-            return cmd
+        resolved = _resolve_exe(cmd[0])
+        if resolved:
+            return [resolved] + cmd[1:]
         return None
     # Fallback: treat as direct command
-    if shutil.which(runner_name):
-        return [runner_name]
+    resolved = _resolve_exe(runner_name)
+    if resolved:
+        return [resolved]
     return None
 
 
@@ -53,16 +68,33 @@ def bridge_one_client(conn, addr, runner_cmd):
         leftover = first_chunk
 
     cmd = list(runner_cmd)
-    if cwd and runner_cmd[-1] == "acp":
-        cmd.extend(["--cwd", cwd])
 
-    proc = subprocess.Popen(
-        cmd,
+    # Validate cwd: must exist on the local filesystem.
+    # The server sends its own container path (e.g. /root/... or /Users/...)
+    # which does not exist on Windows clients — skip it in that case.
+    popen_cwd = cwd if cwd and os.path.isdir(cwd) else None
+    if cwd and popen_cwd is None:
+        print(f"[bridge] CWD ignored (not a local dir): {cwd}", flush=True)
+
+    if popen_cwd and cmd[-1] == "acp":
+        cmd.extend(["--cwd", popen_cwd])
+
+    popen_kwargs = dict(
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        cwd=cwd,
+        cwd=popen_cwd,
     )
+    # On Windows, .cmd/.bat wrappers (e.g. npm-installed opencode.cmd)
+    # require shell=True for subprocess to locate and execute them.
+    if sys.platform == "win32":
+        popen_kwargs["shell"] = True
+
+    try:
+        proc = subprocess.Popen(cmd, **popen_kwargs)
+    except FileNotFoundError:
+        # Last resort: try with shell=True
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, cwd=popen_cwd, shell=True)
     print(f"[bridge] {' '.join(cmd)} started (PID: {proc.pid})", flush=True)
 
     if leftover:
