@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/teamworker/file-agent/internal/agent"
@@ -12,7 +10,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "0.8.3"
+var appVersion = "0.9.0"
 
 const NPMInstallGuide = "https://blog.csdn.net/weixin_41929531/article/details/158885541"
 
@@ -92,9 +90,8 @@ type EnvStatus struct {
 
 func (a *App) CheckEnvironment() EnvStatus {
 	env := EnvStatus{}
-	shell := userLoginShell()
 
-	if out, err := exec.Command(shell, "-l", "-c", "which npm && npm --version").CombinedOutput(); err == nil {
+	if out, err := runShellCommand(findCommand("npm") + " && npm --version"); err == nil {
 		env.HasNPM = true
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 		if len(lines) >= 2 {
@@ -102,13 +99,13 @@ func (a *App) CheckEnvironment() EnvStatus {
 		}
 	}
 
-	if out, err := exec.Command(shell, "-l", "-c", "which pip3 && pip3 --version").CombinedOutput(); err == nil {
+	if out, err := runShellCommand(findCommand("pip3") + " && pip3 --version"); err == nil {
 		env.HasPip = true
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 		if len(lines) >= 2 {
 			env.PipVer = strings.TrimSpace(lines[len(lines)-1])
 		}
-	} else if out, err := exec.Command(shell, "-l", "-c", "which pip && pip --version").CombinedOutput(); err == nil {
+	} else if out, err := runShellCommand(findCommand("pip") + " && pip --version"); err == nil {
 		env.HasPip = true
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 		if len(lines) >= 2 {
@@ -167,8 +164,7 @@ func (a *App) GetACPAgents() []ACPAgent {
 	}
 
 	for i := range agents {
-		cmd := exec.Command(userLoginShell(), "-l", "-c", agents[i].CheckCmd)
-		output, err := cmd.CombinedOutput()
+		output, err := runShellCommand(agents[i].CheckCmd)
 		if err == nil {
 			agents[i].Installed = true
 			agents[i].Version = strings.TrimSpace(string(output))
@@ -211,18 +207,5 @@ func (a *App) TerminalRunCommand(cmd string) {
 }
 
 func (a *App) OpenURL(url string) {
-	exec.Command("open", url).Start()
-}
-
-func userLoginShell() string {
-	if shell := os.Getenv("SHELL"); shell != "" {
-		return shell
-	}
-	if out, err := exec.Command("dscl", ".", "-read", os.Getenv("HOME"), "UserShell").CombinedOutput(); err == nil {
-		parts := strings.Fields(string(out))
-		if len(parts) >= 2 {
-			return parts[len(parts)-1]
-		}
-	}
-	return "/bin/zsh"
+	openURL(url)
 }
