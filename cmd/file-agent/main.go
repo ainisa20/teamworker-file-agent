@@ -21,6 +21,7 @@ import (
 	"time"
 
 	chclient "github.com/jpillora/chisel/client"
+	"github.com/teamworker/file-agent/internal/agent"
 	"github.com/teamworker/file-agent/internal/mcp"
 )
 
@@ -351,12 +352,12 @@ func startAgent(server, authToken, user string, tPort, localPort int, mToken, di
 	fmt.Printf("  MCP:      R:127.0.0.1:%d → 127.0.0.1:%d\n", tPort, localPort)
 
 	if cfg != nil && cfg.ACPPort > 0 {
-		scriptPath := findScriptCLI("stdio_to_tcp.py")
-		if scriptPath != "" {
+		if scriptPath, err := agent.EnsureACPBridge(); err == nil {
 			acpLocalPort := 4096
 			acpCmd := exec.CommandContext(context.Background(), "python3", scriptPath,
 				"--port", fmt.Sprintf("%d", acpLocalPort),
 				"--hostname", "127.0.0.1",
+				"--runner", "opencode",
 			)
 			acpCmd.Stdout = os.Stdout
 			acpCmd.Stderr = os.Stderr
@@ -462,22 +463,6 @@ func mask(n int) string {
 		mask[i] = '*'
 	}
 	return string(mask)
-}
-
-func findScriptCLI(name string) string {
-	if exe, err := os.Executable(); err == nil {
-		p := filepath.Join(filepath.Dir(exe), name)
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	if _, err := os.Stat(name); err == nil {
-		return name
-	}
-	if _, err := os.Stat("acp-bridge/" + name); err == nil {
-		return "acp-bridge/" + name
-	}
-	return ""
 }
 
 func waitOnWindows() {
